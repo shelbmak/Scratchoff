@@ -1,0 +1,160 @@
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="cover.png">
+<link rel="manifest" href="manifest.json">
+<title>Scratch Reveal</title>
+<style>
+  html,body{height:100%;margin:0;background:#000;overflow:hidden}
+  #app{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  canvas{position:absolute;left:0;top:0;touch-action:none}
+  #controls{position:fixed;right:12px;top:12px;z-index:9999;}
+  button{background:rgba(255,255,255,0.95);border:none;padding:8px 12px;border-radius:8px;font-size:14px}
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="bottom"></canvas>
+  <canvas id="top"></canvas>
+</div>
+
+<div id="controls">
+  <button id="reset">Reset</button>
+</div>
+
+<script>
+(async function(){
+  const bottomCanvas = document.getElementById('bottom');
+  const topCanvas = document.getElementById('top');
+  const bottomCtx = bottomCanvas.getContext('2d');
+  const topCtx = topCanvas.getContext('2d');
+  const coverSrc = 'cover.png';
+  const artSrc = 'art.png';
+  const resetBtn = document.getElementById('reset');
+
+  let dpr = window.devicePixelRatio || 1;
+  function resize(){
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    bottomCanvas.width = w * dpr; bottomCanvas.height = h * dpr;
+    topCanvas.width = w * dpr; topCanvas.height = h * dpr;
+    bottomCanvas.style.width = topCanvas.style.width = w + 'px';
+    bottomCanvas.style.height = topCanvas.style.height = h + 'px';
+    bottomCtx.setTransform(dpr,0,0,dpr,0,0);
+    topCtx.setTransform(dpr,0,0,dpr,0,0);
+    drawAll();
+  }
+
+  let bottomImg = new Image();
+  let topImg = new Image();
+  bottomImg.src = artSrc;
+  topImg.src = coverSrc;
+  bottomImg.crossOrigin = topImg.crossOrigin = 'anonymous';
+
+  let imagesLoaded = 0;
+  function checkLoaded(){
+    imagesLoaded++;
+    if(imagesLoaded >= 2) {
+      resize();
+    }
+  }
+  bottomImg.onload = checkLoaded;
+  topImg.onload = checkLoaded;
+
+  function drawAll(){
+    // draw bottom image
+    try {
+      bottomCtx.clearRect(0,0, bottomCanvas.width, bottomCanvas.height);
+      bottomCtx.drawImage(bottomImg, 0, 0, window.innerWidth, window.innerHeight);
+    } catch(e){ console.log('bottom draw err', e) }
+    // draw top image fresh
+    try {
+      topCtx.globalCompositeOperation = 'source-over';
+      topCtx.clearRect(0,0, topCanvas.width, topCanvas.height);
+      topCtx.drawImage(topImg, 0, 0, window.innerWidth, window.innerHeight);
+      // after drawing, switch to erasing mode
+      topCtx.globalCompositeOperation = 'destination-out';
+      topCtx.fillStyle = 'rgba(0,0,0,1)';
+      topCtx.lineCap = 'round';
+      topCtx.lineJoin = 'round';
+    } catch(e){ console.log('top draw err', e) }
+  }
+
+  // scratching variables
+  let isDown = false;
+  let lastX = 0;
+  let lastY = 0;
+  let brush = Math.max(24, Math.round(Math.min(window.innerWidth, window.innerHeight) * 0.04)); // relative brush
+
+  function getPos(evt){
+    const rect = topCanvas.getBoundingClientRect();
+    const clientX = (evt.touches ? evt.touches[0].clientX : evt.clientX);
+    const clientY = (evt.touches ? evt.touches[0].clientY : evt.clientY);
+    return {x: clientX - rect.left, y: clientY - rect.top};
+  }
+
+  function beginScratch(evt){
+    isDown = true;
+    const p = getPos(evt);
+    lastX = p.x; lastY = p.y;
+    drawDot(p.x, p.y);
+    evt.preventDefault();
+  }
+  function moveScratch(evt){
+    if(!isDown) return;
+    const p = getPos(evt);
+    drawLine(lastX, lastY, p.x, p.y);
+    lastX = p.x; lastY = p.y;
+    evt.preventDefault();
+  }
+  function endScratch(evt){
+    isDown = false;
+    evt && evt.preventDefault();
+  }
+
+  function drawDot(x,y){
+    topCtx.beginPath();
+    topCtx.arc(x, y, brush, 0, Math.PI*2);
+    topCtx.fill();
+  }
+  function drawLine(x1,y1,x2,y2){
+    topCtx.lineWidth = brush * 2;
+    topCtx.beginPath();
+    topCtx.moveTo(x1, y1);
+    topCtx.lineTo(x2, y2);
+    topCtx.stroke();
+    // also fill endpoints
+    topCtx.beginPath();
+    topCtx.arc(x2,y2, brush, 0, Math.PI*2);
+    topCtx.fill();
+  }
+
+  // Pointer events for wide compatibility
+  topCanvas.addEventListener('pointerdown', beginScratch, {passive:false});
+  window.addEventListener('pointermove', moveScratch, {passive:false});
+  window.addEventListener('pointerup', endScratch, {passive:false});
+  topCanvas.addEventListener('pointercancel', endScratch);
+
+  // Reset
+  resetBtn.addEventListener('click', function(){
+    drawAll();
+  });
+
+  // handle orientation/resize
+  window.addEventListener('resize', function(){
+    // recompute brush on resize
+    brush = Math.max(16, Math.round(Math.min(window.innerWidth, window.innerHeight) * 0.04));
+    resize();
+  });
+
+  // Service worker registration (optional, for offline)
+  if('serviceWorker' in navigator){
+    try { navigator.serviceWorker.register('sw.js'); } catch(e){ console.log('sw reg failed', e); }
+  }
+})();
+</script>
+</body>
+</html>
